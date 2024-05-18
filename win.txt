@@ -1,0 +1,186 @@
+public class Address
+{
+	public string City { get; set; }
+	public int Flat { get; set; }
+}
+public class Person
+{
+	public int Id { get; set; }
+	public string Name { get; set; }
+	public string SecondName { get; set; }
+	public int Age { get; set; }
+	public Address Address { get; set; }
+	public override string ToString()
+	{
+		return $"Person ( Id = {Id}, Name = {Name}, SecondName = {SecondName}, Age = {Age}, City = {Address.City}, Flat = {Address.Flat})";
+	}
+}
+public class PersonRepository
+{
+	private readonly List<Person> _persons;
+	private int _maxId;
+	public PersonRepository(string path)
+	{
+		//_persons = LoadData(path);
+		_persons = LoadJsonData(path);
+		_maxId = _persons.Max(p => p.Id);
+	}
+	private List<Person> LoadData(string path)
+	{
+		XmlSerializer xmlSerializer = new(typeof(List<Person>));
+		using var fileStream = new FileStream(path, FileMode.Open);
+		return xmlSerializer.Deserialize(fileStream) as List<Person>;
+	}
+	private List<Person> LoadJsonData(string path)
+	{
+		var json = File.ReadAllText(path);
+		return JsonSerializer.Deserialize<List<Person>>(json);
+	}
+	public PersonRepository()
+	{
+		_maxId = 0;
+		_persons = new List<Person>();
+	}
+	public void Add(Person person)
+	{
+		person.Id = ++_maxId;
+		_persons.Add(person);
+	}
+	public IEnumerable<Person> GetAll() => _persons;
+	public Dictionary<int, List<Person>> GetByAges()
+	{
+		return _persons.GroupBy(p => p.Age).ToDictionary(p => p.Key, p => p.ToList());
+	}
+	public void Delete(int id)
+	{
+		var person = _persons.FirstOrDefault(p => p.Id == id);
+		if (person != null)
+			_persons.Remove(person);
+	}
+	public void Edit(Person person)
+	{
+		var index = _persons.FindIndex(p => p.Id == person.Id);
+		if (index >= 0)
+			_persons[index] = person;
+	}
+	public void SaveData(string path)
+	{
+		XmlSerializer xmlSerializer = new(typeof(List<Person>));
+		using var fileStream = new FileStream(path, FileMode.OpenOrCreate);
+		xmlSerializer.Serialize(fileStream, _persons);
+	}
+	public void SaveJsonData(string path)
+	{
+		var json = JsonSerializer.Serialize(_persons);
+		File.WriteAllText(path, json);
+	}
+}	
+public partial class EditForm : Form
+{
+	public int personId = 0;
+	public EditForm(Person person = null)
+	{
+		InitializeComponent();
+		if (person != null)
+		{
+			personId = person.Id;
+			textBoxName.Text = person.Name;
+			textBoxSecondName.Text = person.SecondName;
+			textBoxCity.Text = person.Address.City;
+			numericUpDownAge.Value = person.Age;
+			numericUpDownFlat.Value = person.Address.Flat;
+		}
+	}
+	public Person GetPerson()
+	{
+		var address = new Address
+		{
+			City = textBoxCity.Text,
+			Flat = Convert.ToInt32(numericUpDownFlat.Value)
+		};
+		return new Person()
+		{
+			Id = personId,
+			Name = textBoxName.Text,
+			SecondName = textBoxSecondName.Text,
+			Age = Convert.ToInt32(numericUpDownAge.Value),
+			Address = address
+		};
+	}
+	private void buttonSave_Click(object sender, EventArgs e)
+	{
+		var person = GetPerson();
+		if (ValidatePerson(person))
+			DialogResult = DialogResult.OK;
+	}
+	private bool ValidatePerson(Person person)
+	{
+		return !string.IsNullOrEmpty(person.Name) &&
+			!string.IsNullOrEmpty(person.SecondName) &&
+			!string.IsNullOrEmpty(person.Address.City) &&
+			person.Age > 0 &&
+			person.Address.Flat > 0;
+	}
+}
+
+public partial class MainForm : Form
+{
+	private PersonRepository _personRepository = new();
+	public MainForm()
+	{
+		InitializeComponent();
+	}
+	private void UpdateItems()
+	{
+		var items = _personRepository.GetAll();
+		listBoxItems.DataSource = new ObservableCollection<Person>(items);
+		listBoxItems.SelectedItem = null;
+	}
+	private void buttonAdd_Click(object sender, EventArgs e)
+	{
+		var editForm = new EditForm();
+		if (editForm.ShowDialog() == DialogResult.OK)
+		{
+			var newPerson = editForm.GetPerson();
+			_personRepository.Add(newPerson);
+			UpdateItems();
+		}
+	}
+	private void buttonEdit_Click(object sender, EventArgs e)
+	{
+		if (listBoxItems.SelectedItem is not Person selectedPerson)
+			return;
+		var editForm = new EditForm(selectedPerson);
+		if (editForm.ShowDialog() == DialogResult.OK)
+		{
+			var changedPerson = editForm.GetPerson();
+			_personRepository.Edit(changedPerson);
+			UpdateItems();
+		}
+	}
+	private void buttonRemove_Click(object sender, EventArgs e)
+	{
+		if (listBoxItems.SelectedItem is not Person selectedPerson)
+			return;
+		_personRepository.Delete(selectedPerson.Id);
+		UpdateItems();
+	}
+	private void buttonSave_Click(object sender, EventArgs e)
+	{
+		if (_personRepository == null) return;
+		var saveDialog = new SaveFileDialog();
+		if (saveDialog.ShowDialog() == DialogResult.OK)
+		{
+			_personRepository.SaveJsonData(saveDialog.FileName);
+		}
+	}
+	private void buttonLoad_Click(object sender, EventArgs e)
+	{
+		var openDialog = new OpenFileDialog();
+		if (openDialog.ShowDialog() == DialogResult.OK)
+		{
+			_personRepository = new PersonRepository(openDialog.FileName);
+			UpdateItems();
+		}
+	}
+}
